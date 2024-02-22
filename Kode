@@ -1,0 +1,176 @@
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
+from tensorflow.keras.metrics import Precision, Recall, AUC
+from tensorflow.keras.layers import Dense, Conv2D, MaxPooling2D, BatchNormalization, Flatten, Dropout
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.models import Sequential
+
+# Data generators with augmentation
+datagen = ImageDataGenerator(
+    rescale=1/255,
+    rotation_range=15,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    vertical_flip=True
+)
+
+# Change the directory paths to your local paths
+train_generator = datagen.flow_from_directory(
+    "/kaggle/input/dataset-kelompok-2/DATASET_PENCIT_KELOMPOK2/DATASET_PENCIT_KELOMPOK2/train",
+    target_size=(120, 120),
+    batch_size=8,
+    class_mode="categorical",
+    classes=["NORMAL", "AWAL", "AKUT"]
+)
+
+valid_generator = ImageDataGenerator(rescale=1/255).flow_from_directory(
+    "/kaggle/input/dataset-kelompok-2/val-20231217T134557Z-001/val",
+    target_size=(120, 120),
+    batch_size=8,
+    class_mode="categorical",
+    classes=["NORMAL", "Awal", "Akut"]
+)
+
+test_generator = ImageDataGenerator(rescale=1/255).flow_from_directory(
+    "/kaggle/input/dataset-kelompok-2/DATASET_PENCIT_KELOMPOK2/DATASET_PENCIT_KELOMPOK2/test",
+    target_size=(120, 120),
+    batch_size=8,
+    class_mode="categorical",
+    classes=["NORMAL", "AWAL", "AKUT"]
+)
+
+model = Sequential()
+
+model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(120, 120, 3)))
+model.add(MaxPooling2D(2, 2))
+model.add(BatchNormalization())
+
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(2, 2))
+model.add(BatchNormalization())
+
+model.add(Conv2D(128, (3, 3), activation='relu'))
+model.add(MaxPooling2D(2, 2))
+model.add(BatchNormalization())
+
+model.add(Conv2D(256, (3, 3), activation='relu'))
+model.add(MaxPooling2D(2, 2))
+model.add(BatchNormalization())
+
+model.add(Flatten())
+model.add(Dense(256, activation='relu'))
+model.add(Dropout(0.4))  # Sesuaikan nilai dropout
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.4))
+model.add(Dense(3, activation='softmax'))
+
+# Menyesuaikan learning rate
+initial_learning_rate = 1e-4
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate, decay_steps=10000, decay_rate=0.9, staircase=True
+)
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+    loss="categorical_crossentropy",
+    metrics=["accuracy", Precision(), Recall(), AUC()]
+)
+
+# Train the model with more epochs
+history = model.fit(train_generator, epochs=25, validation_data=valid_generator)
+
+# Function to load and predict on a single image
+def load_and_predict(image_path):
+    # Load the image
+    img = tf.keras.preprocessing.image.load_img(image_path, target_size=(120, 120))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array /= 255.0  # Rescale the pixel values to the range [0, 1]
+
+    # Make predictions
+    prediction = model.predict(img_array)
+
+    # Display the input image
+    plt.imshow(img)
+    plt.title("Input Image")
+    plt.axis("off")
+    plt.show()
+
+    # Print the prediction result
+    classes = ["NORMAL", "PNEUMONIA_EARLY", "PNEUMONIA_ACUTE"]
+    predicted_class = classes[np.argmax(prediction)]
+    print(f"Prediction: {predicted_class} ({prediction[0][np.argmax(prediction)] * 100:.2f}% confidence)")
+
+# Specify the path to the single test image
+test_image_path = "/kaggle/input/data-gambar-x-ray-yang-akan-dites/220px-X-ray_of_lobar_pneumonia.jpg"
+
+# Call the function to load and predict on a single image
+load_and_predict(test_image_path)
+
+# Plot the training and validation loss
+plt.figure(figsize=(12, 6))
+
+# Plot training loss
+plt.subplot(2, 3, 1)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.title('Training Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+
+# Plot validation loss
+plt.subplot(2, 3, 2)
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+
+# Plot test accuracy
+plt.subplot(2, 3, 3)
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.title('Training and Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(loc='lower right')
+
+# Plot test precision
+plt.subplot(2, 3, 4)
+plt.plot(history.history['precision'], label='Training Precision')
+plt.plot(history.history['val_precision'], label='Validation Precision')
+plt.title('Training and Validation Precision')
+plt.xlabel('Epoch')
+plt.ylabel('Precision')
+plt.legend(loc='lower right')
+
+# Plot test recall
+plt.subplot(2, 3, 5)
+plt.plot(history.history['recall'], label='Training Recall')
+plt.plot(history.history['val_recall'], label='Validation Recall')
+plt.title('Training and Validation Recall')
+plt.xlabel('Epoch')
+plt.ylabel('Recall')
+plt.legend(loc='lower right')
+
+# Plot test AUC
+plt.subplot(2, 3, 6)
+plt.plot(history.history['auc'], label='Training AUC')
+plt.plot(history.history['val_auc'], label='Validation AUC')
+plt.title('Training and Validation AUC')
+plt.xlabel('Epoch')
+plt.ylabel('AUC')
+plt.legend(loc='lower right')
+
+plt.tight_layout()
+plt.show()
+
+# Evaluate on the test set and print out the performance metrics
+test_loss, test_accuracy, test_precision, test_recall, test_auc = model.evaluate(test_generator)
+print(f"\nTest Loss: {test_loss}")
+print(f"Test Accuracy: {test_accuracy}")
+print(f"Test Precision: {test_precision}")
+print(f"Test Recall: {test_recall}")
+print(f"Test AUC: {test_auc}")
